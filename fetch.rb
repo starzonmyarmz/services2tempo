@@ -1,8 +1,14 @@
-require 'pco_api'
-require 'plist'
-require 'mail'
-
+require 'bundler/inline'
 require './secrets.rb'
+
+gemfile do
+  source 'https://rubygems.org'
+  gem 'pco_api', require: 'pco_api'
+  gem 'plist', require: 'plist'
+  gem 'mail', require: 'mail'
+end
+
+
 
 api = PCO::API.new(
   basic_auth_token: ENV['token'],
@@ -14,20 +20,14 @@ api = PCO::API.new(
 puts "Fetching service…"
 
 schedules = api.services.v2.people[ENV['userid']].schedules.get(order: 'starts_at')
-# service = schedules['data'].first
-# date = service['attributes']['short_dates']
-# service_type = service['relationships']['service_type']['data']['id']
-# plan_id = service['relationships']['plan']['data']['id']
+service = schedules['data'].first
+date = service['attributes']['short_dates']
+service_type = service['relationships']['service_type']['data']['id']
+plan_id = service['relationships']['plan']['data']['id']
 
 puts "Fetching songs…"
 
-# items = api.services.v2.service_types[service_type].plans[plan_id].items.get(include: 'arrangement')
-
-# Testing
-date = 'Jun 16'
-items = api.services.v2.service_types[668986].plans[46285416].items.get(include: 'arrangement')
-items = api.services.v2.service_types[672100].plans[46285466].items.get(include: 'arrangement')
-
+items = api.services.v2.service_types[service_type].plans[plan_id].items.get(include: 'arrangement')
 arrangements = items['included']
 set_items = items['data']
 
@@ -42,6 +42,11 @@ puts "------------------"
 body = ''
 songs = []
 
+METERS = {
+  '3/4' => [1, 1, 1],
+  '6/8' => [1, 0, 0, 1, 0, 0]
+}
+
 arrangements.each do |arrangement|
   if arrangement['attributes']['bpm']
     arrangement_id = arrangement['id']
@@ -52,9 +57,10 @@ arrangements.each do |arrangement|
 
       if item_id == arrangement_id
         title = item['attributes']['title']
-        bpm = arrangement['attributes']['bpm']
+        bpm = arrangement['attributes']['bpm'].round()
+        meter = arrangement['attributes']['meter']
 
-        puts line = "#{title}, #{bpm} \n"
+        puts line = "#{title}, #{bpm}, #{meter} \n"
 
         body << line
 
@@ -67,7 +73,7 @@ arrangements.each do |arrangement|
           'automatorState' => 0,
           'barTotal' => 100,
           'beatCode' => 0,
-          'beatStates' => [1, 1, 1, 1],
+          'beatStates' => METERS[meter] || [1, 1, 1, 1],
           'countInBars' => 0,
           'meterCode' => 4,
           'numBeats' => 4,
