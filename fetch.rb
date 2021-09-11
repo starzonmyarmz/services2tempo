@@ -20,122 +20,146 @@ api = PCO::API.new(
 puts "Fetching service…"
 
 schedules = api.services.v2.people[ENV['userid']].schedules.get(order: 'starts_at')
-service = schedules['data'].first
-date = service['attributes']['short_dates']
-service_type = service['relationships']['service_type']['data']['id']
-plan_id = service['relationships']['plan']['data']['id']
+num_services = schedules['meta']['count']
 
-puts "Fetching songs…"
+if num_services > 0
+  service = schedules['data'].first
+  date = service['attributes']['short_dates']
+  service_type = service['relationships']['service_type']['data']['id']
+  plan_id = service['relationships']['plan']['data']['id']
 
-items = api.services.v2.service_types[service_type].plans[plan_id].items.get(include: 'arrangement')
-arrangements = items['included']
-set_items = items['data']
+  puts "Fetching songs…"
 
-puts ""
-puts "Setlist for #{date}"
-puts "------------------"
+  items = api.services.v2.service_types[service_type].plans[plan_id].items.get(include: 'arrangement')
+  arrangements = items['included']
+  set_items = items['data']
+
+  puts ""
+  puts "Setlist for #{date}"
+  puts "-----------------------"
 
 
 
-# Create the songs array
+  # Create the songs array
 
-body = ''
-songs = []
+  body = ''
+  songs = []
 
-METERS = {
-  '3/4' => [1, 1, 1],
-  '6/8' => [1, 0, 0, 1, 0, 0]
-}
+  METERS = {
+    '4/4' => {
+      'beatStates' => [1, 1, 1, 1],
+      'meterCode' => 4,
+      'numBeats' => 4
+      },
+    '3/4' => {
+      'beatStates' => [1, 1, 1],
+      'meterCode' => 3,
+      'numBeats' => 3
+      },
+    '6/8' => {
+      'beatStates' => [1, 2, 2, 1, 2, 2],
+      'meterCode' => 15,
+      'numBeats' => 6
+    },
+    # Sometimes the meter isn't set in Services :(
+    nil => {
+      'beatStates' => [1, 1, 1, 1],
+      'meterCode' => 4,
+      'numBeats' => 4
+    }
+  }
 
-arrangements.each do |arrangement|
-  if arrangement['attributes']['bpm']
-    arrangement_id = arrangement['id']
+  arrangements.each do |arrangement|
+    if arrangement['attributes']['bpm']
+      arrangement_id = arrangement['id']
 
-    set_items.each do |item|
-      item_data = item['relationships']['arrangement']['data']
-      item_id = item_data && item_data['id']
+      set_items.each do |item|
+        item_data = item['relationships']['arrangement']['data']
+        item_id = item_data && item_data['id']
 
-      if item_id == arrangement_id
-        title = item['attributes']['title']
-        bpm = arrangement['attributes']['bpm'].round()
-        meter = arrangement['attributes']['meter']
+        if item_id == arrangement_id
+          title = item['attributes']['title']
+          bpm = arrangement['attributes']['bpm'].round()
+          meter = arrangement['attributes']['meter']
 
-        puts line = "#{title}, #{bpm}, #{meter} \n"
+          puts line = "#{title}, #{bpm}, #{meter} \n"
 
-        body << line
+          body << line
 
-        songs.push({
-          'MutedBars' => 0,
-          'UnmutedBars' => 1,
-          'autoStepBPM' => 2,
-          'autoStepBars' => 10,
-          'autoStepTime' => 30,
-          'automatorState' => 0,
-          'barTotal' => 100,
-          'beatCode' => 0,
-          'beatStates' => METERS[meter] || [1, 1, 1, 1],
-          'countInBars' => 0,
-          'meterCode' => 4,
-          'numBeats' => 4,
-          'numSubBeats' => 1,
-          'resetAtCountEnd' => false,
-          'stopAtCountEnd' => false,
-          'subBeatStates' => [1],
-          'tempo' => bpm,
-          'timerMax' => 300,
-          'title' => title,
-          'trackerHasMax' => false,
-          'trackerState' => 0
-          })
+          songs.push({
+            'MutedBars' => 0,
+            'UnmutedBars' => 1,
+            'autoStepBPM' => 2,
+            'autoStepBars' => 10,
+            'autoStepTime' => 30,
+            'automatorState' => 0,
+            'barTotal' => 100,
+            'beatCode' => 0,
+            'beatStates' => METERS[meter]['beatStates'],
+            'countInBars' => 0,
+            'meterCode' => METERS[meter]['meterCode'],
+            'numBeats' => METERS[meter]['numBeats'],
+            'numSubBeats' => 1,
+            'resetAtCountEnd' => false,
+            'stopAtCountEnd' => false,
+            'subBeatStates' => [1],
+            'tempo' => bpm,
+            'timerMax' => 300,
+            'title' => title,
+            'trackerHasMax' => false,
+            'trackerState' => 0
+            })
+        end
       end
     end
   end
+
+
+
+  # Create the plist file
+
+  plist = {
+    'autoAdvance' => false,
+    'loop' => false,
+    'songs' => songs,
+    'title' => date
+  }
+
+  file = File.new("#{date}.slist", 'w')
+  file.write(plist.to_plist)
+  file.close
+
+
+
+  # Mail the setlist to me
+
+  Mail.defaults do
+    delivery_method :smtp, { :address    => 'smtp.gmail.com',
+                             :port       => 587,
+                             :user_name  => ENV['username'],
+                             :password   => ENV['password'],
+                             :authentication => :plain,
+                             :enable_starttls_auto => true
+                          }
+  end
+
+  mail = Mail.new do
+    from     ENV['username']
+    to       ENV['username']
+    subject  "Setlist for #{date}"
+    body     body
+    add_file "#{date}.slist"
+  end
+
+  mail.deliver
+
+  puts ""
+  puts "Setlist emailed!"
+
+
+
+  # Clean up the created plist file
+  File.delete("#{date}.slist") if File.exist?("#{date}.slist")
+else
+  puts "There are no services!"
 end
-
-
-
-# Create the plist file
-
-plist = {
-  'autoAdvance' => false,
-  'loop' => false,
-  'songs' => songs,
-  'title' => date
-}
-
-file = File.new("#{date}.slist", 'w')
-file.write(plist.to_plist)
-file.close
-
-
-
-# Mail the setlist to me
-
-Mail.defaults do
-  delivery_method :smtp, { :address    => 'smtp.gmail.com',
-                           :port       => 587,
-                           :user_name  => ENV['username'],
-                           :password   => ENV['password'],
-                           :authentication => :plain,
-                           :enable_starttls_auto => true
-                        }
-end
-
-mail = Mail.new do
-  from     ENV['username']
-  to       ENV['username']
-  subject  "Setlist for #{date}"
-  body     body
-  add_file "#{date}.slist"
-end
-
-mail.deliver
-
-puts ""
-puts "Setlist emailed!"
-
-
-
-# Clean up the created plist file
-
-File.delete("#{date}.slist") if File.exist?("#{date}.slist")
