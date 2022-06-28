@@ -61,6 +61,11 @@ if num_services > 0
       'meterCode' => 15,
       'numBeats' => 6
     },
+    '6/4' => {
+      'beatStates' => [1, 1, 1, 1, 1, 1],
+      'meterCode' => 6,
+      'numBeats' => 6
+    },
     # Sometimes the meter isn't set in Services :(
     nil => {
       'beatStates' => [1, 1, 1, 1],
