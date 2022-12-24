@@ -1,21 +1,13 @@
-require 'bundler/inline'
 require './secrets.rb'
 
-gemfile do
-  source 'https://rubygems.org'
-  gem 'pco_api', require: 'pco_api'
-  gem 'plist', require: 'plist'
-  gem 'mail', require: 'mail'
-end
-
-
+require 'pco_api'
+require 'plist'
+require 'mail'
 
 api = PCO::API.new(
   basic_auth_token: ENV['token'],
   basic_auth_secret: ENV['secret']
 )
-
-
 
 puts "Fetching service…"
 
